@@ -7,7 +7,7 @@
 `fb_audit` — это ETL-пайплайн для Meta Ads API. Он регулярно:
 - забирает журнал изменений (`actions`);
 - загружает атрибуты сущностей (`account/campaign/adset/ad/creative`);
-- загружает performance-метрики (`insights`, `insights_update`);
+- загружает performance-метрики (`insights`, `insights_update`, `intraday_insights.py`);
 - пишет все в PostgreSQL-таблицы для аналитики и автоматизаций.
 
 ### 2) Основные файлы и их роль
@@ -35,6 +35,9 @@
 
 - `insights_update.ipynb`  
   Инкрементальная дневная догрузка инсайтов (с актуальными полями для app installs/trials).
+
+- `intraday_insights.py`  
+  Внутридневной `today`-срез по ad-level: на каждом запуске удаляет и пересобирает данные по каждому аккаунту в `intraday_insights`.
 
 - `utils.py`  
   Общие функции (подключение к БД, reconnection, фильтрация колонок по схеме, нормализация payload, account filtering, универсальные DB-хелперы).
@@ -66,7 +69,7 @@
 ### 5) Актуальные изменения API/метрик
 
 В `insights` и `insights_update`:
-- API-version для throttle-проверки обновлен до `v19.0`;
+- API-version для throttle-проверки берется из `FB_GRAPH_API_VERSION` (по умолчанию `v23.0`);
 - attribution windows: `1d_view`, `1d_click`, `7d_click`, `28d_click`;
 - добавлены поля `results` и `cost_per_result` (в т.ч. важны для app installs/trials);
 - в схему добавлены `results JSONB` и `cost_per_result JSONB` + `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`.
@@ -126,6 +129,7 @@
 5. `ad_atribute`
 6. `creative_atribute`
 7. `insights_update` (или `insights` для backfill)
+8. `intraday_insights.py` (по расписанию в течение дня)
 
 Так гарантируется, что атрибуты обновляются на базе свежих изменений и свежих performance-данных.
 
@@ -138,7 +142,7 @@
 `fb_audit` is an ETL pipeline for Meta Ads API. It regularly:
 - pulls change history (`actions`);
 - updates entity attributes (`account/campaign/adset/ad/creative`);
-- fetches performance metrics (`insights`, `insights_update`);
+- fetches performance metrics (`insights`, `insights_update`, `intraday_insights.py`);
 - stores data in PostgreSQL for reporting and automations.
 
 ### 2) Main Files and Responsibilities
@@ -166,6 +170,9 @@
 
 - `insights_update.ipynb`  
   Incremental daily insights updater (including app install/trial related fields).
+
+- `intraday_insights.py`  
+  Intraday `today` ad-level snapshot. On each run, it fully refreshes account data in `intraday_insights` (delete + insert).
 
 - `utils.py`  
   Shared helpers for DB connectivity, reconnection, schema-safe inserts, payload normalization, account filtering, and common DB write operations.
@@ -197,7 +204,7 @@ This approach reduces API load and runtime.
 ### 5) API and Metrics Modernization
 
 In `insights` / `insights_update`:
-- throttle check API version moved to `v19.0`;
+- throttle check API version now comes from `FB_GRAPH_API_VERSION` (default `v23.0`);
 - attribution windows now: `1d_view`, `1d_click`, `7d_click`, `28d_click`;
 - added `results` and `cost_per_result` fields (important for app installs/trials);
 - schema includes `results JSONB` and `cost_per_result JSONB` with safe `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`.
@@ -256,5 +263,6 @@ Both `12345` and `act_12345` formats are supported.
 5. `ad_atribute`
 6. `creative_atribute`
 7. `insights_update` (or `insights` for historical backfill)
+8. `intraday_insights.py` (scheduled throughout the day)
 
 This sequence keeps entity attributes aligned with latest object changes and performance updates.

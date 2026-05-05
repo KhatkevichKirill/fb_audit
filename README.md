@@ -9,10 +9,11 @@
 - creative_atribute — тех данные по креативу - текст объявления, CTA, utm метки, привязанная страница, дата создания и пр.
 - insights — инсайты
 - insights_update — обновление инсайтов(проверяем что уже есть и забираем только то, чего не хватает)
+- intraday_insights.py — внутридневной (today) срез инсайтов, полный refresh по аккаунту на каждом запуске
 
 ## Актуализация (2026-04)
 
-- В `insights` и `insights_update` обновлён API version для проверки rate limit: `v19.0`.
+- В `insights`, `insights_update` и `intraday_insights.py` версия Graph API для проверки rate limit вынесена в `FB_GRAPH_API_VERSION` (по умолчанию `v23.0`).
 - Удалены депрекейтнутые attribution windows: `7d_view`, `28d_view`.
 - В запрос инсайтов добавлены поля `results` и `cost_per_result` (для app installs/trials).
 - В схеме таблицы `insights` добавлены колонки `results JSONB` и `cost_per_result JSONB`, плюс `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` для уже существующих БД.
