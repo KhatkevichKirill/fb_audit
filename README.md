@@ -38,3 +38,12 @@
 
 - Подробный двуязычный (RU/EN) гайд по архитектуре и пайплайну:
   - `PIPELINE_GUIDE_RU_EN.md`
+
+## Связанные репозитории / Related repositories
+
+| Repository | Role |
+|---|---|
+| **this repo** | Meta Marketing API → Postgres ETL notebooks and scripts |
+| [data_analyst-fb_audit](https://github.com/KhatkevichKirill/data_analyst-fb_audit) | Natural-language notebook web app for analyzing the warehouse |
+
+Typical flow: load data with `fb_audit`, then point the analyst starter at the same Postgres database.
