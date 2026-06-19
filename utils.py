@@ -1,8 +1,10 @@
 import json
 import os
+import time
 from datetime import datetime
 
 import psycopg2
+import requests as rq
 from psycopg2 import OperationalError
 
 
@@ -122,3 +124,89 @@ def store_deleted_object(cur, connection, object_id, object_type, account_id, ta
     query = f"INSERT INTO {table} values (%s, %s, %s, %s)"
     cur.execute(query, vars=(object_id, account_id, object_type, today))
     connection.commit()
+
+
+# ---------------------------------------------------------------------------
+# Rate-limit handling (shared by every Meta Marketing API script)
+#
+# Centralised here so insights / actions / intraday / breakdowns all use the
+# same thresholds and back-off policy. Ported from the production fb_audit
+# scripts where each module previously carried its own copy.
+# ---------------------------------------------------------------------------
+
+# Meta error codes worth retrying with back-off (transient / rate related).
+TRANSIENT_FB_CODES = {1, 2, 4, 17, 341}
+# error_subcode that accompanies "Application request limit reached" (code=4).
+RATE_LIMIT_SUBCODE = 1504022
+# Token-level failure — never retry, halt the run.
+TOKEN_INVALID_CODE = 190
+
+# Throttle thresholds (percent of quota). Above these we pause/requeue.
+APP_UTIL_THRESHOLD = 60
+ACC_UTIL_THRESHOLD = 70
+
+MAX_RETRIES = 3          # per (account[, day, pass]) before giving up
+BACKOFF_BASE_SECONDS = 5  # exponential: 5s, 10s, 20s, ...
+
+
+def graph_api_version():
+    """Single source of truth for the Graph API version used in REST calls.
+
+    Reads FB_GRAPH_API_VERSION (e.g. "23.0") and returns it without the leading
+    'v'. Defaults to 23.0 so a missing env var doesn't silently break REST URLs.
+    """
+    return os.environ.get("FB_GRAPH_API_VERSION", "23.0")
+
+
+def check_limit(account_id, access_token, version=None):
+    """Read Meta's per-call throttle header for an account.
+
+    Returns the parsed ``x-fb-ads-insights-throttle`` JSON, e.g.::
+
+        {"app_id_util_pct": 3.2, "acc_id_util_pct": 1.1, "ads_api_access_tier": "..."}
+
+    A single cheap insights GET surfaces the current utilisation so callers can
+    decide whether to proceed, sleep, or requeue. Call it ONCE per account and
+    reuse the result — calling it twice per check needlessly doubles call volume.
+    """
+    version = version or graph_api_version()
+    response = rq.get(
+        "https://graph.facebook.com/v"
+        + version
+        + "/act_"
+        + account_id
+        + "/insights?access_token="
+        + access_token
+    )
+    usage = response.headers["x-fb-ads-insights-throttle"]
+    return json.loads(usage)
+
+
+def rate_limit_exceeded(throttle, app_threshold=APP_UTIL_THRESHOLD, acc_threshold=ACC_UTIL_THRESHOLD):
+    """True when the throttle header reports usage above either threshold."""
+    return (
+        throttle.get("app_id_util_pct", 0) >= app_threshold
+        or throttle.get("acc_id_util_pct", 0) >= acc_threshold
+    )
+
+
+def backoff_seconds(attempt, base=BACKOFF_BASE_SECONDS):
+    """Exponential back-off delay for retry ``attempt`` (0-indexed): 5, 10, 20, ..."""
+    return base * (2 ** attempt)
+
+
+def is_rate_limit_error(error):
+    """True when a FacebookRequestError is the 'request limit reached' rate error."""
+    try:
+        body = error._body["error"]
+        return body["code"] == 4 and body.get("error_subcode") == RATE_LIMIT_SUBCODE
+    except (AttributeError, KeyError, TypeError):
+        return False
+
+
+def is_token_error(error):
+    """True when a FacebookRequestError is a token-invalid (code 190) failure."""
+    try:
+        return error._body["error"]["code"] == TOKEN_INVALID_CODE
+    except (AttributeError, KeyError, TypeError):
+        return False

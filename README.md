@@ -1,49 +1,73 @@
+# fb_audit
 
+Generic **Meta Ads → PostgreSQL ETL**. A set of small, standalone Python scripts
+that pull entity attributes, change history, and performance insights from the
+Meta Marketing API and load them into Postgres — incrementally, rate-limit aware,
+and safe to re-run.
 
-В проекте следующие файлы
-- actions — Данные по действиям пользователей - когда кто и как произвёл определённые действия. Например когда поменялась ставка или бюджет, когда было остановлено или запущено объявление/адсет/кампания и пр.
-- account_atribute — Технические данные по аккаунту, такие как, название, выбранная валюта, настройки и пр.
-- ad_atribute — Технические данные по креативу, такие как, название, id, статус, хэш картинки, данные по таргетингу(тянутся из настроек адсета)
-- adset_atribute — Технические данные по адсету - название, id, таргетинги, гео, ставка, бюджет и пр.
-- campaign_atribute — Технические данные по кампании
-- creative_atribute — тех данные по креативу - текст объявления, CTA, utm метки, привязанная страница, дата создания и пр.
-- insights — инсайты
-- insights_update — обновление инсайтов(проверяем что уже есть и забираем только то, чего не хватает)
-- intraday_insights.py — внутридневной (today) срез инсайтов, полный refresh по аккаунту на каждом запуске
+This is the open, reusable core extracted from a larger private project. If you
+need a dependable way to warehouse your own Meta Ads data, clone it and point it
+at your account.
 
-## Актуализация (2026-04)
+## What it collects
 
-- В `insights`, `insights_update` и `intraday_insights.py` версия Graph API для проверки rate limit вынесена в `FB_GRAPH_API_VERSION` (по умолчанию `v23.0`).
-- Удалены депрекейтнутые attribution windows: `7d_view`, `28d_view`.
-- В запрос инсайтов добавлены поля `results` и `cost_per_result` (для app installs/trials).
-- В схеме таблицы `insights` добавлены колонки `results JSONB` и `cost_per_result JSONB`, плюс `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` для уже существующих БД.
-- В `actions` добавлены:
-  - нормализация `date_time_in_timezone`/`event_time` в ISO-формат,
-  - JSON-сериализация `extra_data`,
-  - параметризованная запись в `actions_log`,
-  - override периода через `ACTIONS_START_DATE` / `ACTIONS_END_DATE`.
-- В `account_atribute`, `campaign_atribute`, `adset_atribute`, `ad_atribute`, `creative_atribute`:
-  - унифицирована обработка ошибок (включая `code=190` и `error_subcode`),
-  - включена безопасная запись только существующих колонок таблицы (`information_schema.columns`),
-  - расширены `exclude_list` по полям, которые в новых версиях API чаще ломают совместимость.
-- В `ad_atribute` включён upsert через `ON CONFLICT (id) DO UPDATE`.
-- В `creative_atribute` убран устаревший `REFRESH MATERIALIZED VIEW mview_audit_by_offers` (view отсутствует в текущей схеме).
-- Общие функции вынесены в `utils.py` и подключены в ноутбуках:
-  - подключение/reconnect к БД,
-  - безопасная фильтрация колонок по схеме таблицы,
-  - нормализация payload для `actions` и `*_atribute`,
-  - фильтрация аккаунтов через `ACCOUNT_IDS`.
+| Script | Pulls | Writes to |
+|--------|-------|-----------|
+| `account_atribute.py` | account technical attributes | `property_accounts` |
+| `campaign_atribute.py` | campaign attributes | `property_campaigns` |
+| `adset_atribute.py` | ad set attributes (targeting, budget, …) | `property_adsets` |
+| `ad_atribute.py` | ad attributes (upsert on id) | `property_ads` |
+| `creative_atribute.py` | creative attributes (copy, CTA, UTM, …) | `property_creatives` |
+| `actions.py` | change history (bid/budget/status events) | `actions`, `actions_log` |
+| `insights.py` | daily ad performance (date-range) | `insights`, `insights_log` |
+| `insights_update.py` | daily incremental + atomic last-7-day refetch | `insights`, `insights_log` |
+| `insights_breakdowns_update.py` | performance by age×gender and by placement | `insights_breakdowns_demographic`, `insights_breakdowns_placement` |
+| `intraday_insights.py` | today's snapshot, full refresh each run | `intraday_insights` |
 
-## Документация / Documentation
+`backfill/` has shell wrappers that run the loaders in date-range batches.
 
-- Подробный двуязычный (RU/EN) гайд по архитектуре и пайплайну:
-  - `PIPELINE_GUIDE_RU_EN.md`
+## Quick start
 
-## Связанные репозитории / Related repositories
+```bash
+git clone <this repo> && cd fb_audit
+python -m venv venv && source venv/bin/activate
+pip install -r requirements.txt
 
-| Repository | Role |
-|---|---|
-| **this repo** | Meta Marketing API → Postgres ETL notebooks and scripts |
-| [data_analyst-fb_audit](https://github.com/KhatkevichKirill/data_analyst-fb_audit) | Natural-language notebook web app for analyzing the warehouse |
+cp .env.example .env        # then fill in your token + DB creds
+psql "$DATABASE_URL" -f schema_properties.sql
+psql "$DATABASE_URL" -f schema_breakdowns.sql
 
-Typical flow: load data with `fb_audit`, then point the analyst starter at the same Postgres database.
+python insights_update.py   # daily performance
+python insights_breakdowns_update.py
+```
+
+Every script reads config from a `.env` file (see `.env.example`). Point at a
+different file with `FB_AUDIT_ENV=/path/to/.env`. Restrict to specific accounts
+with `ACCOUNT_IDS=123,456`.
+
+## Design notes
+
+- **Incremental + idempotent.** Each loader records what it has fetched in a
+  `*_log` table and skips work already done. `insights_update` additionally
+  re-fetches the last 7 days to capture late-attributed conversions.
+- **Crash-safe refetch.** The daily insights / breakdowns refetch is atomic per
+  `(account, day)`: old rows are replaced only inside one transaction that runs
+  *after* a successful API fetch, so a failed or rate-limited call preserves the
+  previous snapshot instead of leaving a gap.
+- **Rate-limit aware.** A shared throttle check (`utils.check_limit`) reads Meta's
+  usage header once per account; over-threshold or transient errors sleep and
+  requeue with exponential back-off; an invalid token halts immediately.
+- **Schema-safe writes.** Inserts only touch columns that actually exist, so a
+  changing Meta API surface won't break the load.
+
+See `docs/PIPELINE.md` for the full data flow and `docs/architecture.mmd` for a
+diagram.
+
+## Requirements
+
+Python 3.9+, PostgreSQL, a Meta Marketing API access token with `ads_read`.
+Dependencies in `requirements.txt`.
+
+## License
+
+MIT.
