@@ -1,0 +1,38 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  sanity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Compile Python
+        run: |
+          python - <<'PY'
+          import pathlib, py_compile, sys
+          bad = 0
+          for p in pathlib.Path(".").rglob("*.py"):
+              if ".git" in p.parts:
+                  continue
+              try:
+                  py_compile.compile(str(p), doraise=True)
+              except py_compile.PyCompileError as e:
+                  print(e); bad = 1
+          sys.exit(bad)
+          PY
+      - name: Shell syntax
+        run: |
+          for s in backfill/*.sh; do bash -n "$s"; done
+
+  secret-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Scan for secrets / internal leaks
+        run: python .github/leak_scan.py
