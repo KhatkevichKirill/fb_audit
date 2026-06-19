@@ -107,6 +107,41 @@ def store_rows(cur, table_name, rows):
         cur.execute(f"INSERT INTO {table_name} ({cols}) VALUES ({vals})", filtered)
 
 
+def ensure_tables(cur, connection):
+    """Create insights_log + a baseline insights table if they don't exist.
+
+    The daily job is often the first loader run on a fresh warehouse, so it must
+    bootstrap its own tables (same DDL as insights.py). IF NOT EXISTS leaves a
+    richer pre-existing schema untouched; inserts are schema-safe regardless.
+    """
+    cur.execute(
+        f"""CREATE TABLE IF NOT EXISTS {table_log} (
+            account_id VARCHAR(50), date DATE, with_data BOOLEAN,
+            recording_date TIMESTAMP WITHOUT TIME ZONE,
+            PRIMARY KEY (account_id, date)
+        )"""
+    )
+    cur.execute(
+        f"""CREATE TABLE IF NOT EXISTS {table} (
+            account_id VARCHAR(50), campaign_id VARCHAR(50), adset_id VARCHAR(50),
+            ad_id VARCHAR(50), date_start DATE, date_stop DATE,
+            impressions TEXT, reach TEXT, clicks TEXT, spend TEXT,
+            unique_inline_link_clicks TEXT, inline_link_clicks TEXT,
+            inline_post_engagement TEXT, estimated_ad_recallers TEXT,
+            estimated_ad_recall_rate TEXT, objective TEXT, unique_clicks TEXT,
+            actions JSONB, action_values JSONB, outbound_clicks JSONB,
+            unique_actions JSONB, unique_outbound_clicks JSONB,
+            video_p25_watched_actions JSONB, video_p50_watched_actions JSONB,
+            video_p75_watched_actions JSONB, video_p95_watched_actions JSONB,
+            results JSONB, cost_per_result JSONB,
+            PRIMARY KEY (account_id, campaign_id, adset_id, ad_id, date_start),
+            FOREIGN KEY (account_id, date_start)
+                REFERENCES {table_log}(account_id, date) ON DELETE CASCADE
+        )"""
+    )
+    connection.commit()
+
+
 def replace_account_day(cur, connection, account_id, day, rows, recording_date, with_data):
     """Atomically replace one (account_id, day) slice in ONE transaction.
 
@@ -172,6 +207,7 @@ def main():
     refetch_cutoff = (datetime.utcnow() - timedelta(days=REFETCH_DAYS)).strftime("%Y-%m-%d")
 
     cur, connection = connection_to_database(host, port, database, user, password)
+    ensure_tables(cur, connection)
 
     me = User(fbid="me")
     id_list = [x.export_all_data()["account_id"] for x in me.get_ad_accounts()]

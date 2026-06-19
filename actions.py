@@ -61,11 +61,59 @@ def has_rows(items):
     return len(items) > 0
 
 
+def ensure_tables(cur, connection):
+    """Create actions_log + actions if they don't exist.
+
+    Self-bootstrapping like insights.py / intraday_insights.py, so a fresh
+    warehouse doesn't need a separate migration step. AdActivity exposes a wide,
+    version-dependent field set; store_actions writes only the columns that
+    actually exist, so this DDL doesn't have to match the API surface exactly.
+    """
+    cur.execute(
+        f"""CREATE TABLE IF NOT EXISTS {table_log} (
+            id          TEXT,
+            date        DATE,
+            status      BOOLEAN,
+            updated_at  TIMESTAMP
+        )"""
+    )
+    cur.execute(
+        f"""CREATE TABLE IF NOT EXISTS {table} (
+            actor_id                TEXT,
+            actor_name              TEXT,
+            application_id          TEXT,
+            application_name        TEXT,
+            date_time_in_timezone   TIMESTAMP,
+            event_time              TIMESTAMP,
+            event_type              TEXT,
+            extra_data              TEXT,
+            object_id               TEXT,
+            object_name             TEXT,
+            object_type             TEXT,
+            translated_event_type   TEXT,
+            account_id              TEXT,
+            date                    DATE
+        )"""
+    )
+    connection.commit()
+
+
 def store_actions(cur, actions):
+    """Schema-safe insert: drops any AdActivity field that isn't a column."""
+    if not actions:
+        return
+    cur.execute(
+        "SELECT column_name FROM information_schema.columns WHERE table_name = %s",
+        (table,),
+    )
+    valid = {r[0] for r in cur.fetchall()}
     for act in actions:
-        cols = ",".join(act.keys())
-        vals = ",".join(map(lambda x: f"%({x})s", act.keys()))
-        cur.execute(f"INSERT INTO {table} ({cols}) VALUES ({vals})", act)
+        filtered = {k: v for k, v in act.items() if k in valid}
+        if not filtered:
+            continue
+        cols = ",".join(filtered.keys())
+        vals = ",".join(map(lambda x: f"%({x})s", filtered.keys()))
+        cur.execute(f"INSERT INTO {table} ({cols}) VALUES ({vals})", filtered)
 
 
 def log_actions(cur, account_id, day, actions):
@@ -97,6 +145,7 @@ def main():
     fields_activity = list(set(AdActivity.Field.__dict__.keys()) - {"__module__", "__doc__"})
 
     cur, connection = connection_to_database(host, port, database, user, password)
+    ensure_tables(cur, connection)
 
     print(f"start uploading\t{datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')}", flush=True)
 
