@@ -12,29 +12,32 @@
 
 ### 2) Основные файлы и их роль
 
-- `actions.ipynb`  
+- `actions.py`  
   Загружает историю изменений объектов из Meta (кто/что/когда изменил), пишет в `actions` и `actions_log`.
 
-- `account_atribute.ipynb`  
+- `account_atribute.py`  
   Загружает атрибуты рекламных аккаунтов в `property_accounts`.
 
-- `campaign_atribute.ipynb`  
+- `campaign_atribute.py`  
   Загружает атрибуты кампаний в `property_campaigns`.
 
-- `adset_atribute.ipynb`  
+- `adset_atribute.py`  
   Загружает атрибуты adset в `property_adsets`.
 
-- `ad_atribute.ipynb`  
+- `ad_atribute.py`  
   Загружает атрибуты ads в `property_ads` (upsert по `id`).
 
-- `creative_atribute.ipynb`  
+- `creative_atribute.py`  
   Загружает атрибуты креативов в `property_creatives`.
 
-- `insights.ipynb`  
-  Историческая загрузка дневных инсайтов.
+- `insights.py`  
+  Историческая загрузка дневных инсайтов (date-range backfill).
 
-- `insights_update.ipynb`  
-  Инкрементальная дневная догрузка инсайтов (с актуальными полями для app installs/trials).
+- `insights_update.py`  
+  Инкрементальная дневная догрузка инсайтов + атомарный refetch последних 7 дней.
+
+- `insights_breakdowns_update.py`  
+  Performance по age×gender и по placement → `insights_breakdowns_demographic`, `insights_breakdowns_placement`.
 
 - `intraday_insights.py`  
   Внутридневной `today`-срез по ad-level: на каждом запуске удаляет и пересобирает данные по каждому аккаунту в `intraday_insights`.
@@ -122,16 +125,23 @@
 ### 10) Практический порядок запуска
 
 Рекомендуемый порядок:
-1. `actions`
-2. `account_atribute`
-3. `campaign_atribute`
-4. `adset_atribute`
-5. `ad_atribute`
-6. `creative_atribute`
-7. `insights_update` (или `insights` для backfill)
-8. `intraday_insights.py` (по расписанию в течение дня)
+1. `actions.py`
+2. `account_atribute.py`
+3. `campaign_atribute.py`
+4. `adset_atribute.py`
+5. `ad_atribute.py`
+6. `creative_atribute.py`
+7. `insights_update.py` (или `insights.py` для backfill)
+8. `insights_breakdowns_update.py`
+9. `intraday_insights.py` (по расписанию в течение дня)
 
 Так гарантируется, что атрибуты обновляются на базе свежих изменений и свежих performance-данных.
+
+### 11) Аналитический слой (опционально)
+
+Для NL→SQL анализа поверх той же БД см.
+[data_analyst-fb_audit](https://github.com/KhatkevichKirill/data_analyst-fb_audit):
+`data-analyst init-view` (создаёт `v_insights_daily`) → `data-analyst serve`.
 
 ---
 
@@ -147,29 +157,32 @@
 
 ### 2) Main Files and Responsibilities
 
-- `actions.ipynb`  
+- `actions.py`  
   Pulls Meta activity history and writes to `actions` + `actions_log`.
 
-- `account_atribute.ipynb`  
+- `account_atribute.py`  
   Loads account attributes into `property_accounts`.
 
-- `campaign_atribute.ipynb`  
+- `campaign_atribute.py`  
   Loads campaign attributes into `property_campaigns`.
 
-- `adset_atribute.ipynb`  
+- `adset_atribute.py`  
   Loads ad set attributes into `property_adsets`.
 
-- `ad_atribute.ipynb`  
+- `ad_atribute.py`  
   Loads ad attributes into `property_ads` (upsert by `id`).
 
-- `creative_atribute.ipynb`  
+- `creative_atribute.py`  
   Loads creative attributes into `property_creatives`.
 
-- `insights.ipynb`  
-  Historical daily insights loader.
+- `insights.py`  
+  Historical daily insights loader (date-range backfill).
 
-- `insights_update.ipynb`  
-  Incremental daily insights updater (including app install/trial related fields).
+- `insights_update.py`  
+  Incremental daily insights updater with atomic last-7-day refetch.
+
+- `insights_breakdowns_update.py`  
+  Age×gender and placement breakdowns.
 
 - `intraday_insights.py`  
   Intraday `today` ad-level snapshot. On each run, it fully refreshes account data in `intraday_insights` (delete + insert).
@@ -256,13 +269,20 @@ Both `12345` and `act_12345` formats are supported.
 
 ### 10) Recommended Run Order
 
-1. `actions`
-2. `account_atribute`
-3. `campaign_atribute`
-4. `adset_atribute`
-5. `ad_atribute`
-6. `creative_atribute`
-7. `insights_update` (or `insights` for historical backfill)
-8. `intraday_insights.py` (scheduled throughout the day)
+1. `actions.py`
+2. `account_atribute.py`
+3. `campaign_atribute.py`
+4. `adset_atribute.py`
+5. `ad_atribute.py`
+6. `creative_atribute.py`
+7. `insights_update.py` (or `insights.py` for historical backfill)
+8. `insights_breakdowns_update.py`
+9. `intraday_insights.py` (scheduled throughout the day)
 
 This sequence keeps entity attributes aligned with latest object changes and performance updates.
+
+### 11) Analysis layer (optional)
+
+For natural-language SQL over the same warehouse, see
+[data_analyst-fb_audit](https://github.com/KhatkevichKirill/data_analyst-fb_audit):
+run `data-analyst init-view` once, then `data-analyst serve`.

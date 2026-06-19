@@ -63,6 +63,17 @@ with `ACCOUNT_IDS=123,456`.
 See `docs/PIPELINE.md` for the full data flow and `docs/architecture.mmd` for a
 diagram.
 
+## Related repositories
+
+| Repository | Role |
+|---|---|
+| **this repo** | Meta Marketing API → Postgres ETL Python loaders |
+| [data_analyst-fb_audit](https://github.com/KhatkevichKirill/data_analyst-fb_audit) | Natural-language notebook analyst over the same warehouse |
+
+Typical flow: load data with `fb_audit`, then point the analyst starter at the
+same Postgres database and run `data-analyst init-view` once to create
+`v_insights_daily` (pre-extracted purchases and video metrics).
+
 ## Requirements
 
 Python 3.9+, PostgreSQL, a Meta Marketing API access token with `ads_read`.

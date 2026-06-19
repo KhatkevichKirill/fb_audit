@@ -91,3 +91,16 @@ header (`check_limit`). If `app_id_util_pct ≥ 60` or `acc_id_util_pct ≥ 70` 
 account is requeued after a pause. Transient errors (rate-limit subcode, network)
 retry with exponential back-off (5 → 10 → 20 s) up to `MAX_RETRIES`; an invalid
 token (code 190) halts the run.
+
+## Analysis layer (optional)
+
+This repo stops at the warehouse tables. For natural-language SQL analysis over
+the same database, use
+[data_analyst-fb_audit](https://github.com/KhatkevichKirill/data_analyst-fb_audit):
+
+1. Point analyst `DB_*` at this Postgres instance (read-only user).
+2. Run `data-analyst init-view` to create `v_insights_daily` over `insights`.
+3. Start the notebook UI with `data-analyst serve`.
+
+The analyst knowledge base documents all tables written by these loaders,
+including breakdown tables and TEXT-metric casting conventions.
