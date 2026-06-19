@@ -1,0 +1,42 @@
+flowchart LR
+    META[Meta Marketing API]
+
+    subgraph ATTR[Entity attributes]
+        ACC[account_atribute]
+        CMP[campaign_atribute]
+        ADS[adset_atribute]
+        AD[ad_atribute]
+        CR[creative_atribute]
+    end
+
+    ACT[actions]
+    INS[insights / insights_update]
+    BD[insights_breakdowns_update]
+    INTRA[intraday_insights]
+
+    UTILS[(utils.py\nDB + rate limit + schema-safe writes)]
+
+    META --> ATTR
+    META --> ACT
+    META --> INS
+    META --> BD
+    META --> INTRA
+
+    ATTR -. uses .-> UTILS
+    ACT -. uses .-> UTILS
+    INS -. uses .-> UTILS
+    BD -. uses .-> UTILS
+    INTRA -. uses .-> UTILS
+
+    ACC --> PACC[(property_accounts)]
+    CMP --> PCMP[(property_campaigns)]
+    ADS --> PADS[(property_adsets)]
+    AD --> PAD[(property_ads)]
+    CR --> PCR[(property_creatives)]
+    ACT --> TACT[(actions / actions_log)]
+    INS --> TINS[(insights / insights_log)]
+    BD --> TBD[(insights_breakdowns_demographic\ninsights_breakdowns_placement)]
+    INTRA --> TINTRA[(intraday_insights)]
+
+    TACT -. drives selection .-> ATTR
+    TINS -. drives selection .-> ATTR
